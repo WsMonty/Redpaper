@@ -52,8 +52,8 @@ shape are skipped, so you won't get a blurry or awkwardly cropped desktop.
 ## Install
 
 ```sh
-git clone https://github.com/WsMonty/redpaper.git
-cd redpaper
+git clone https://github.com/WsMonty/Redpaper.git
+cd Redpaper
 ./deploy.sh
 ```
 
