@@ -15,6 +15,13 @@ Redpaper picks the newest image from your favourite subreddits that actually **f
 and sets it as your wallpaper on a schedule you choose. Images that are too small or the wrong
 shape are skipped, so you won't get a blurry or awkwardly cropped desktop.
 
+<p align="center">
+  <img src="screenshots/now.png" height="420" alt="Now tab: the current wallpaper with Next and Keep buttons">&nbsp;&nbsp;<img src="screenshots/history.png" height="420" alt="History tab: recent wallpapers">
+</p>
+<p align="center">
+  <img src="screenshots/settings-1.png" height="420" alt="Settings: subreddits and minimum fit">&nbsp;&nbsp;<img src="screenshots/settings-2.png" height="420" alt="Settings: screens, schedule and launch at login">
+</p>
+
 ## Features
 
 - **Fits your screens.** Each image gets a fit score based on its shape and resolution. Only images that
