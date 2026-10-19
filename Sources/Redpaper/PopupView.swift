@@ -33,6 +33,23 @@ struct PopupView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12).padding(.vertical, 8)
             }
+            if let update = model.availableUpdate {
+                Divider()
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text("Redpaper \(update.version) is available.")
+                            Link("What's new", destination: update.html_url)
+                        }
+                        Text("To update, run `git pull && ./deploy.sh` in your Redpaper folder.")
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                } icon: { Image(systemName: "arrow.down.circle") }
+                .font(.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+            }
             Divider()
             HStack {
                 Spacer()
