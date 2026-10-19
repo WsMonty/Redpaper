@@ -36,6 +36,7 @@ shape are skipped, so you won't get a blurry or awkwardly cropped desktop.
 - **Never repeats.** Images you've already seen or skipped don't come back.
 - **Skips NSFW posts** (on by default).
 - **Update notices.** When a new version is released, the popup tells you, with a link to what's new.
+  Or check any time with **Settings → Check Now**.
 - **Light.** Redpaper uses Reddit's public feed and caches it, so it only sends a request now and then.
   Old images are deleted automatically.
 

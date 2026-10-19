@@ -24,6 +24,8 @@ struct SettingsTab: View {
     @State private var loginError = ""
     @State private var accountError = ""
     @State private var signingIn = false
+    @State private var checkingUpdate = false
+    @State private var updateMessage = ""
 
     var body: some View {
         Form {
@@ -146,8 +148,19 @@ struct SettingsTab: View {
             }))
             if !loginError.isEmpty { Text(loginError).font(.caption).foregroundStyle(.red) }
             Toggle("Check for updates", isOn: $checkForUpdates)
-            Text("Asks GitHub once a day whether a newer version exists. This is version \(Release.current ?? "unknown").")
+            Text("Asks GitHub once a day whether a newer version exists.")
                 .font(.caption).foregroundStyle(.secondary)
+            LabeledContent("Version \(Release.current ?? "unknown")") {
+                Button(checkingUpdate ? "Checking…" : "Check Now") {
+                    checkingUpdate = true
+                    Task {
+                        updateMessage = await model.checkForUpdateNow()
+                        checkingUpdate = false
+                    }
+                }
+                .disabled(checkingUpdate)
+            }
+            if !updateMessage.isEmpty { Text(updateMessage).font(.caption) }
         }
     }
 

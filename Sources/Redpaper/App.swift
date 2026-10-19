@@ -379,18 +379,33 @@ final class AppModel: ObservableObject {
 
     /// Asks GitHub at most once a day (once an hour after a network error).
     private func checkForUpdate() async {
-        guard UserDefaults.standard.bool(forKey: "checkForUpdates"), let current = Release.current else {
-            availableUpdate = nil
-            return
-        }
-        guard Date().timeIntervalSince(lastUpdateCheck) > 24 * 3600 else { return }
+        guard UserDefaults.standard.bool(forKey: "checkForUpdates"),
+              Date().timeIntervalSince(lastUpdateCheck) > 24 * 3600 else { return }
         lastUpdateCheck = Date()
         do {
-            let latest = try await Release.latest()
-            availableUpdate = Release.isNewer(latest.version, than: current) ? latest : nil
+            try await fetchUpdate()
         } catch is URLError {
             lastUpdateCheck = Date().addingTimeInterval(-23 * 3600)
         } catch {} // e.g. no release published yet
+    }
+
+    /// "Check Now" in Settings: asks GitHub right away, even with daily checks off.
+    func checkForUpdateNow() async -> String {
+        lastUpdateCheck = Date()
+        do {
+            try await fetchUpdate()
+            return availableUpdate.map { "Redpaper \($0.version) is available." } ?? "Redpaper is up to date."
+        } catch let error as URLError {
+            return error.localizedDescription
+        } catch {
+            return "Couldn't find a release on GitHub."
+        }
+    }
+
+    private func fetchUpdate() async throws {
+        guard let current = Release.current else { return } // not running from the app bundle
+        let latest = try await Release.latest()
+        availableUpdate = Release.isNewer(latest.version, than: current) ? latest : nil
     }
 
     private func tick() {
