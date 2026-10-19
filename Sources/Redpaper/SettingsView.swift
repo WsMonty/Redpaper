@@ -10,6 +10,7 @@ struct SettingsTab: View {
     @EnvironmentObject private var auth: Auth
     @AppStorage("subreddits") private var subreddits = "wallpapers"
     @AppStorage("customSubreddits") private var customSubreddits = ""
+    @AppStorage("sort") private var sort = Sort.new.rawValue
     @AppStorage("minFit") private var minFit = SettingsTab.safeFit
     @AppStorage("skipNSFW") private var skipNSFW = true
     @AppStorage("sameOnAllScreens") private var sameOnAllScreens = true
@@ -57,10 +58,15 @@ struct SettingsTab: View {
                 Button("Add", action: add).disabled(checking || newSub.isEmpty)
             }
             if !subMessage.isEmpty { Text(subMessage).font(.caption).foregroundStyle(.secondary) }
+            Picker("Pick from", selection: $sort) {
+                ForEach(Sort.allCases) { Text($0.label).tag($0.rawValue) }
+            }
         } header: {
             Text("Subreddits")
         } footer: {
-            Text("Redpaper picks the newest fitting image across all selected subreddits.")
+            Text(sort == Sort.new.rawValue
+                 ? "Redpaper picks the newest fitting image, taking turns between the selected subreddits."
+                 : "Redpaper picks the most upvoted fitting image, taking turns between the selected subreddits.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

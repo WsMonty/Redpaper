@@ -211,6 +211,8 @@ final class AppModel: ObservableObject {
     /// Selected subreddits, stored comma-separated (AppStorage can't hold arrays).
     static var subreddits: [String] { (UserDefaults.standard.string(forKey: "subreddits") ?? "").commaList }
 
+    static var sort: Sort { Sort(rawValue: UserDefaults.standard.string(forKey: "sort") ?? "") ?? .new }
+
     var nextUpdate: Date? {
         let d = UserDefaults.standard
         return Schedule.next(
@@ -271,7 +273,7 @@ final class AppModel: ObservableObject {
             d.set(Date().timeIntervalSince1970, forKey: "lastUpdate")
             retryAfter = nil
             if missed > 0 {
-                status = "No new image with ≥ \(Int((minFit * 100).rounded())) % fit in the newest posts"
+                status = "No new image with ≥ \(Int((minFit * 100).rounded())) % fit in \(Self.sort == .new ? "the newest" : "the top") posts"
                     + (groups.count > 1 ? " for \(missed) screen(s)." : ".")
             }
         } catch {
@@ -314,6 +316,15 @@ final class AppModel: ObservableObject {
         cleanUp()
     }
 
+    /// Copies a wallpaper to ~/Pictures/Redpaper and shows it in Finder.
+    func saveToPictures(_ item: Applied) {
+        do {
+            NSWorkspace.shared.activateFileViewerSelecting([try Wallpaper.saveToPictures(item)])
+        } catch {
+            status = "Couldn't save to Pictures: \(error.localizedDescription)"
+        }
+    }
+
     private func cleanUp() {
         Wallpaper.cleanUp(keeping: Set((history + kept + applied.values).map(\.file)))
     }
@@ -340,7 +351,7 @@ final class AppModel: ObservableObject {
     /// Cached post list for `subs`, refetched when older than `maxAge`. Signed out, requests are spaced
     /// ≥ 61 s apart (Reddit's RSS limit is ~1/min) and a 429 waits for the reset once.
     func posts(_ subs: [String], maxAge: TimeInterval) async throws -> [Post] {
-        let key = subs.map { $0.lowercased() }.sorted().joined(separator: "+")
+        let key = subs.map { $0.lowercased() }.sorted().joined(separator: "+") + "/" + Self.sort.rawValue
         if let hit = cache[key], Date().timeIntervalSince(hit.date) < maxAge { return hit.posts }
         if !auth.signedIn {
             // Reserve the next slot before waiting, so concurrent callers queue up instead of colliding.
@@ -371,9 +382,9 @@ final class AppModel: ObservableObject {
     /// Uses the signed-in API when available, the public feed otherwise.
     private func fetchPosts(_ subs: [String]) async throws -> [Post] {
         do {
-            return try await Reddit.fetch(subs: subs, token: auth.accessToken())
+            return try await Reddit.fetch(subs: subs, sort: Self.sort, token: auth.accessToken())
         } catch is Unauthorized where auth.signedIn {
-            return try await Reddit.fetch(subs: subs, token: auth.refresh())
+            return try await Reddit.fetch(subs: subs, sort: Self.sort, token: auth.refresh())
         }
     }
 
