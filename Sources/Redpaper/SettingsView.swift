@@ -16,6 +16,7 @@ struct SettingsTab: View {
     @AppStorage("frequency") private var frequency = Frequency.daily.rawValue
     @AppStorage("updateMinutes") private var updateMinutes = 9 * 60
     @AppStorage("weekday") private var weekday = 2
+    @AppStorage("checkForUpdates") private var checkForUpdates = true
     @State private var newSub = ""
     @State private var subMessage = ""
     @State private var checking = false
@@ -144,6 +145,9 @@ struct SettingsTab: View {
                 launchAtLogin = SMAppService.mainApp.status == .enabled
             }))
             if !loginError.isEmpty { Text(loginError).font(.caption).foregroundStyle(.red) }
+            Toggle("Check for updates", isOn: $checkForUpdates)
+            Text("Asks GitHub once a day whether a newer version exists. This is version \(Release.current ?? "unknown").")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 

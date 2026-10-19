@@ -16,6 +16,9 @@ if [[ "$(xcode-select -p)" != *Xcode.app* ]]; then
 fi
 
 swift build -c release
+# Version = latest git tag (v1.2 → 1.2); the app compares it with the newest GitHub release.
+VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo 1.0)
+VERSION=${VERSION#v}
 APP=build/Redpaper.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -31,7 +34,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleExecutable</key><string>Redpaper</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
+    <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>

@@ -35,6 +35,7 @@ shape are skipped, so you won't get a blurry or awkwardly cropped desktop.
 - **History.** Go back to any of your last 7 wallpapers, or to the ones you kept, with one click.
 - **Never repeats.** Images you've already seen or skipped don't come back.
 - **Skips NSFW posts** (on by default).
+- **Update notices.** When a new version is released, the popup tells you, with a link to what's new.
 - **Light.** Redpaper uses Reddit's public feed and caches it, so it only sends a request now and then.
   Old images are deleted automatically.
 
@@ -79,7 +80,7 @@ Click the menu bar icon:
 | ------------ | ------------------------------------------------------------------------------------------------------------- |
 | **Now**      | The current wallpaper with a link to the Reddit post, **Next**, **Keep**, and the time of the next update.    |
 | **History**  | Your last 7 wallpapers and the ones you kept. Click one to use it again. Right-click a kept one to remove it. |
-| **Settings** | Subreddits, minimum fit, NSFW filter, multiple screens, schedule and launch at login.                         |
+| **Settings** | Subreddits, minimum fit, NSFW filter, multiple screens, schedule, launch at login and update checks.          |
 
 Keyboard shortcuts while the popup is open: **⌘N** for the next wallpaper, **⌘Q** to quit.
 
@@ -105,7 +106,8 @@ Without an account, Reddit allows about one request per minute. Redpaper caches 
   the wallpaper again whenever you switch to another Space, so every Space ends up with it.
 - **Where files go.** Images are saved in `~/Library/Application Support/Redpaper/`. Only the ones on
   screen, in your history, or kept are stored there. Everything else is deleted.
-- **Privacy.** Redpaper only talks to `reddit.com` and `i.redd.it`. No analytics, no tracking.
+- **Privacy.** Redpaper only talks to `reddit.com` and `i.redd.it`, plus `api.github.com` once a day to
+  check for a new version (turn this off in **Settings → Check for updates**). No analytics, no tracking.
 
 ## Uninstall
 
@@ -137,6 +139,14 @@ Run the built-in checks (fit math, feed parsing, schedule):
 
 ```sh
 ./build.sh && build/Redpaper.app/Contents/MacOS/Redpaper --selftest
+```
+
+**Releasing a version.** The app's version is the latest git tag, and installed copies compare it with
+the newest GitHub release. To ship one, tag it and publish a release:
+
+```sh
+git tag v1.1 && git push origin v1.1
+gh release create v1.1 --generate-notes
 ```
 
 **Reddit sign-in (optional).** By default Redpaper uses Reddit's public feed, which needs no account.

@@ -9,6 +9,7 @@ struct RedpaperApp: App {
         if CommandLine.arguments.contains("--selftest") {
             Reddit.selfTest()
             Schedule.selfTest()
+            Release.selfTest()
             print("selftest ok")
             exit(0)
         }
@@ -97,6 +98,36 @@ enum Schedule {
     }
 }
 
+/// The newest GitHub release. Installs are built from source, so we only point people to it.
+struct Release: Decodable {
+    let tag_name: String
+    let html_url: URL
+    var version: String { tag_name.hasPrefix("v") ? String(tag_name.dropFirst()) : tag_name }
+
+    /// Set by build.sh from the latest git tag; nil when run outside the app bundle.
+    static let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+
+    static func latest() async throws -> Release {
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/WsMonty/Redpaper/releases/latest")!)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try JSONDecoder().decode(Release.self, from: data)
+    }
+
+    /// "1.10" > "1.9" > "1.2.1" > "1.2"
+    static func isNewer(_ version: String, than current: String) -> Bool {
+        version.compare(current, options: .numeric) == .orderedDescending
+    }
+
+    static func selfTest() {
+        precondition(isNewer("1.10", than: "1.9"))
+        precondition(isNewer("1.2.1", than: "1.2"))
+        precondition(!isNewer("1.0", than: "1.0"))
+        precondition(!isNewer("1.0", than: "1.1"))
+        precondition(Release(tag_name: "v2.0", html_url: URL(string: "https://x")!).version == "2.0")
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     let auth = Auth()
@@ -120,7 +151,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var paused = UserDefaults.standard.bool(forKey: "paused") {
         didSet { UserDefaults.standard.set(paused, forKey: "paused") }
     }
+    /// A newer release than this build, if "Check for updates" found one.
+    @Published private(set) var availableUpdate: Release?
     static let historyLimit = 7
+    private var lastUpdateCheck = Date.distantPast
     private var retryAfter: Date?
     private var timer: Timer?
     private var cache: [String: (date: Date, posts: [Post])] = [:]
@@ -138,7 +172,7 @@ final class AppModel: ObservableObject {
     init() {
         UserDefaults.standard.register(defaults: [
             "subreddits": "wallpapers", "customSubreddits": "", "minFit": SettingsTab.safeFit, "skipNSFW": true, "sameOnAllScreens": true,
-            "frequency": Frequency.daily.rawValue, "updateMinutes": 9 * 60, "weekday": 2,
+            "frequency": Frequency.daily.rawValue, "updateMinutes": 9 * 60, "weekday": 2, "checkForUpdates": true,
         ])
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
@@ -343,7 +377,24 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Asks GitHub at most once a day (once an hour after a network error).
+    private func checkForUpdate() async {
+        guard UserDefaults.standard.bool(forKey: "checkForUpdates"), let current = Release.current else {
+            availableUpdate = nil
+            return
+        }
+        guard Date().timeIntervalSince(lastUpdateCheck) > 24 * 3600 else { return }
+        lastUpdateCheck = Date()
+        do {
+            let latest = try await Release.latest()
+            availableUpdate = Release.isNewer(latest.version, than: current) ? latest : nil
+        } catch is URLError {
+            lastUpdateCheck = Date().addingTimeInterval(-23 * 3600)
+        } catch {} // e.g. no release published yet
+    }
+
     private func tick() {
+        Task { await checkForUpdate() }
         guard !busy, !paused, let next = nextUpdate, Date() >= next else { return }
         if let retryAfter, Date() < retryAfter { return }
         Task { await update(fresh: true) }
