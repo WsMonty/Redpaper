@@ -177,7 +177,7 @@ private struct HistoryTab: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Click one to use it until the next scheduled update.")
+                    Text("Click one to use it until the next scheduled update. Right-click to save it to Pictures.")
                         .font(.caption).foregroundStyle(.secondary)
                     if !model.kept.isEmpty {
                         section("Kept wallpapers", model.kept, removable: true)
@@ -200,7 +200,14 @@ private struct HistoryTab: View {
                         .buttonStyle(.plain)
                         .help(item.title)
                         .contextMenu {
-                            if removable { Button("Remove from Kept") { model.removeKept(item) } }
+                            Button("Show in Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.file)])
+                            }
+                            Button("Save to Pictures") { model.saveToPictures(item) }
+                            if removable {
+                                Divider()
+                                Button("Remove from Kept") { model.removeKept(item) }
+                            }
                         }
                 }
             }

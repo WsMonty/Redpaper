@@ -25,6 +25,24 @@ struct Unauthorized: LocalizedError {
     var errorDescription: String? { "Reddit rejected the sign-in (401)." }
 }
 
+/// Which posts to pick from: the newest, or the most upvoted of a period.
+enum Sort: String, CaseIterable, Identifiable {
+    case new, day, week, month, year, all
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .new: "Newest"
+        case .day: "Top today"
+        case .week: "Top this week"
+        case .month: "Top this month"
+        case .year: "Top this year"
+        case .all: "Top of all time"
+        }
+    }
+    var path: String { self == .new ? "new" : "top" }
+    var query: String { self == .new ? "" : "t=\(rawValue)&" }
+}
+
 enum Reddit {
     static let userAgent = "macos:Redpaper:1.0 (personal wallpaper app)"
     static let presets = ["wallpapers", "wallpaper", "EarthPorn", "WidescreenWallpaper", "SpacePorn"]
@@ -33,14 +51,14 @@ enum Reddit {
         name.range(of: "^[A-Za-z0-9_]{2,21}$", options: .regularExpression) != nil
     }
 
-    /// Newest image posts across `subs` (one combined `r/a+b+c` request), newest first.
+    /// Image posts across `subs` (one combined `r/a+b+c` request), in `sort` order.
     /// Signed in: JSON API. Signed out: the public RSS feed (the public JSON feed is blocked;
     /// RSS allows ~1 request per minute).
-    static func fetch(subs: [String], token: String?) async throws -> [Post] {
+    static func fetch(subs: [String], sort: Sort, token: String?) async throws -> [Post] {
         let sub = subs.joined(separator: "+")
         let url = token == nil
-            ? "https://www.reddit.com/r/\(sub)/new/.rss?limit=100"
-            : "https://oauth.reddit.com/r/\(sub)/new?limit=100&raw_json=1"
+            ? "https://www.reddit.com/r/\(sub)/\(sort.path)/.rss?\(sort.query)limit=100"
+            : "https://oauth.reddit.com/r/\(sub)/\(sort.path)?\(sort.query)limit=100&raw_json=1"
         var req = URLRequest(url: URL(string: url)!)
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         if let token { req.setValue("bearer \(token)", forHTTPHeaderField: "Authorization") }

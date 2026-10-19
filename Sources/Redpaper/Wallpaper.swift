@@ -64,6 +64,23 @@ enum Wallpaper {
         ])
     }
 
+    /// Copies a wallpaper to ~/Pictures/Redpaper, named after its post title, and returns the copy.
+    static func saveToPictures(_ item: Applied) throws -> URL {
+        let fm = FileManager.default
+        let dir = fm.urls(for: .picturesDirectory, in: .userDomainMask)[0].appendingPathComponent("Redpaper", isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let source = URL(fileURLWithPath: item.file)
+        let name = String(item.title.replacingOccurrences(of: "[/:]", with: "-", options: .regularExpression).prefix(120))
+        // Title clash: add the post id. If that exists too, this image was already saved.
+        for candidate in [name, "\(name) (\(item.id))"] {
+            let target = dir.appendingPathComponent(candidate).appendingPathExtension(source.pathExtension)
+            if fm.fileExists(atPath: target.path) { continue }
+            try fm.copyItem(at: source, to: target)
+            return target
+        }
+        return dir.appendingPathComponent("\(name) (\(item.id))").appendingPathExtension(source.pathExtension)
+    }
+
     /// Deletes every downloaded image that's neither on screen nor in the history.
     static func cleanUp(keeping inUse: Set<String>) {
         let fm = FileManager.default

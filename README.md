@@ -11,7 +11,7 @@
 
 ---
 
-Redpaper picks the newest image from your favourite subreddits that actually **fits your screen**,
+Redpaper picks the newest (or most upvoted) image from your favourite subreddits that actually **fits your screen**,
 and sets it as your wallpaper on a schedule you choose. Images that are too small or the wrong
 shape are skipped, so you won't get a blurry or awkwardly cropped desktop.
 
@@ -29,10 +29,12 @@ shape are skipped, so you won't get a blurry or awkwardly cropped desktop.
 - **Multiple monitors.** Use the same wallpaper everywhere, or let each screen get its own best match.
 - **Your subreddits.** Comes with r/wallpapers, r/wallpaper, r/EarthPorn, r/WidescreenWallpaper and
   r/SpacePorn. You can add any other subreddit, and Redpaper takes turns between the ones you select.
+- **Newest or top.** Pick from the newest posts, or the most upvoted of the day, week, month, year or all time.
 - **Schedule.** Every hour, every 6 hours, daily or weekly at a set time, or only when you ask.
   If your Mac was asleep at that time, Redpaper catches up when it wakes.
 - **Next and Keep.** Don't like it? Press **Next**. Love it? Press **Keep** to save it and pause the schedule.
 - **History.** Go back to any of your last 7 wallpapers, or to the ones you kept, with one click.
+  Right-click one to show it in Finder or save a copy to `~/Pictures/Redpaper`.
 - **Never repeats.** Images you've already seen or skipped don't come back.
 - **Skips NSFW posts** (on by default).
 - **Update notices.** When a new version is released, the popup tells you, with a link to what's new.
@@ -79,8 +81,8 @@ Click the menu bar icon:
 | Tab          | What it's for                                                                                                 |
 | ------------ | ------------------------------------------------------------------------------------------------------------- |
 | **Now**      | The current wallpaper with a link to the Reddit post, **Next**, **Keep**, and the time of the next update.    |
-| **History**  | Your last 7 wallpapers and the ones you kept. Click one to use it again. Right-click a kept one to remove it. |
-| **Settings** | Subreddits, minimum fit, NSFW filter, multiple screens, schedule, launch at login and update checks.          |
+| **History**  | Your last 7 wallpapers and the ones you kept. Click one to use it again. Right-click to show in Finder, save to Pictures, or remove from Kept. |
+| **Settings** | Subreddits, newest or top, minimum fit, NSFW filter, multiple screens, schedule, launch at login and update checks.          |
 
 Keyboard shortcuts while the popup is open: **⌘N** for the next wallpaper, **⌘Q** to quit.
 
@@ -105,7 +107,8 @@ Without an account, Reddit allows about one request per minute. Redpaper caches 
 - **Spaces.** macOS only lets apps set the wallpaper of the Space you're currently on. Redpaper applies
   the wallpaper again whenever you switch to another Space, so every Space ends up with it.
 - **Where files go.** Images are saved in `~/Library/Application Support/Redpaper/`. Only the ones on
-  screen, in your history, or kept are stored there. Everything else is deleted.
+  screen, in your history, or kept are stored there. Everything else is deleted. Copies you save to
+  Pictures are yours and never touched.
 - **Privacy.** Redpaper only talks to `reddit.com` and `i.redd.it`, plus `api.github.com` once a day to
   check for a new version (turn this off in **Settings → Check for updates**). No analytics, no tracking.
 
