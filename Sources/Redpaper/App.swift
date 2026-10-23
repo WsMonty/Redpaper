@@ -125,6 +125,25 @@ struct Release: Decodable {
         precondition(!isNewer("1.0", than: "1.0"))
         precondition(!isNewer("1.0", than: "1.1"))
         precondition(Release(tag_name: "v2.0", html_url: URL(string: "https://x")!).version == "2.0")
+        let notes = parseNotes("# Release notes\nintro\n\n## 1.3\n- c\n\n## 1.2\n- a\n- b\n", upTo: "1.2")
+        precondition(notes.map(\.version) == ["1.2"] && notes[0].notes == "- a\n- b")
+    }
+
+    /// This build's RELEASE_NOTES.md (copied in by build.sh), newest first.
+    static let notes: [(version: String, notes: String)] = {
+        guard let url = Bundle.main.url(forResource: "RELEASE_NOTES", withExtension: "md"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return parseNotes(text, upTo: current)
+    }()
+
+    /// Splits on "## <version>" headings, skipping versions newer than `current` (not released yet).
+    static func parseNotes(_ text: String, upTo current: String?) -> [(version: String, notes: String)] {
+        ("\n" + text).components(separatedBy: "\n## ").dropFirst().compactMap { section in
+            let lines = section.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+            let version = lines[0].trimmingCharacters(in: .whitespaces)
+            if let current, isNewer(version, than: current) { return nil }
+            return (version, lines.count > 1 ? lines[1].trimmingCharacters(in: .whitespacesAndNewlines) : "")
+        }
     }
 }
 
@@ -153,6 +172,9 @@ final class AppModel: ObservableObject {
     }
     /// A newer release than this build, if "Check for updates" found one.
     @Published private(set) var availableUpdate: Release?
+    /// True after a new version was installed, until its release notes are opened or the popup closes.
+    @Published private(set) var justUpdated = false
+    @Published var showingReleaseNotes = false
     static let historyLimit = 7
     private var lastUpdateCheck = Date.distantPast
     private var retryAfter: Date?
@@ -174,6 +196,12 @@ final class AppModel: ObservableObject {
             "subreddits": "wallpapers", "customSubreddits": "", "minFit": SettingsTab.safeFit, "skipNSFW": true, "sameOnAllScreens": true,
             "frequency": Frequency.daily.rawValue, "updateMinutes": 9 * 60, "weekday": 2, "checkForUpdates": true,
         ])
+        if let version = Release.current, UserDefaults.standard.string(forKey: "notesSeenVersion") != version {
+            // No record yet: a fresh install, or an install from before release notes (it has run before).
+            justUpdated = UserDefaults.standard.string(forKey: "notesSeenVersion") != nil
+                || UserDefaults.standard.double(forKey: "lastUpdate") > 0
+            if !justUpdated { dismissUpdateNotice() }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
@@ -241,7 +269,8 @@ final class AppModel: ObservableObject {
             var exclude = Set(seen)
             var missed = 0
             // One group with every screen (same image everywhere), or one group per screen.
-            let groups = d.bool(forKey: "sameOnAllScreens") ? [NSScreen.screens] : NSScreen.screens.map { [$0] }
+            let same = d.bool(forKey: "sameOnAllScreens")
+            let groups = same ? [NSScreen.screens] : NSScreen.screens.map { [$0] }
             for group in groups {
                 let sizes = group.map(\.pixelSize)
                 var picked: (Post, URL)?
@@ -261,10 +290,15 @@ final class AppModel: ObservableObject {
                 guard let (post, file) = picked else { missed += 1; continue }
                 let shown = Applied(id: post.id, file: file.path, title: post.title,
                                     permalink: post.permalink, subreddit: post.subreddit)
+                // Same everywhere: also cover screens not connected right now (e.g. an external display
+                // that reconnects only after wake), so reapply() gives them this image, not the old one.
+                if same { applied = applied.mapValues { _ in shown } }
                 for screen in group {
                     try Wallpaper.set(file, on: screen)
                     applied[screen.key] = shown
                 }
+                // Screens may have connected while we waited for Reddit.
+                if same { reapply() }
                 history = [shown] + history.filter { $0.id != post.id }.prefix(Self.historyLimit - 1)
                 exclude.insert(post.id)
                 seen.append(post.id)
@@ -291,6 +325,7 @@ final class AppModel: ObservableObject {
             status = "That image is no longer on disk."
             return
         }
+        applied = applied.mapValues { _ in item } // disconnected screens too, see update()
         for screen in NSScreen.screens {
             try? Wallpaper.set(URL(fileURLWithPath: item.file), on: screen)
             applied[screen.key] = item
@@ -411,6 +446,22 @@ final class AppModel: ObservableObject {
         } catch {
             return "Couldn't find a release on GitHub."
         }
+    }
+
+    func showReleaseNotes() {
+        showingReleaseNotes = true
+        dismissUpdateNotice()
+    }
+
+    /// The popup closed: the "updated" notice has been seen.
+    func popupClosed() {
+        showingReleaseNotes = false
+        if justUpdated { dismissUpdateNotice() }
+    }
+
+    private func dismissUpdateNotice() {
+        justUpdated = false
+        UserDefaults.standard.set(Release.current, forKey: "notesSeenVersion")
     }
 
     private func fetchUpdate() async throws {
