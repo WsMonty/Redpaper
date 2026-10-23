@@ -137,6 +137,8 @@ Sources/Redpaper/
 icon/                 App icon (regenerate with: swift icon/make_icon.swift)
 build.sh              Builds build/Redpaper.app
 deploy.sh             Builds, installs to /Applications, and restarts the app
+release.sh            Tags, builds, and publishes a GitHub release (see below)
+RELEASE_NOTES.md      Notes per version, shown in the app
 ```
 
 Run the built-in checks (fit math, feed parsing, schedule):
@@ -146,12 +148,15 @@ Run the built-in checks (fit math, feed parsing, schedule):
 ```
 
 **Releasing a version.** The app's version is the latest git tag, and installed copies compare it with
-the newest GitHub release. To ship one, tag it and publish a release:
+the newest GitHub release. To ship one, add a `## 1.3` section to `RELEASE_NOTES.md` (build.sh fails
+without one; the app shows these notes in Settings and after an update), commit and push it, then run:
 
 ```sh
-git tag v1.1 && git push origin v1.1
-gh release create v1.1 --generate-notes
+./release.sh 1.3
 ```
+
+It checks that main is clean and pushed, tags, builds and self-tests, then pushes the tag and publishes a
+GitHub release with the notes from `RELEASE_NOTES.md`.
 
 **Reddit sign-in (optional).** By default Redpaper uses Reddit's public feed, which needs no account.
 If you have an approved Reddit API app (type _installed app_, redirect URI `redpaper://auth`), paste its

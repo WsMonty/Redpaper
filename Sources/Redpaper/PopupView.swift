@@ -15,6 +15,19 @@ struct PopupView: View {
             .labelsHidden()
             .padding(12)
             Divider()
+            if model.justUpdated, let version = Release.current {
+                Label {
+                    HStack {
+                        Text("Redpaper was updated to \(version).")
+                        Button("What's new") { model.showReleaseNotes() }
+                            .buttonStyle(.link)
+                    }
+                } icon: { Image(systemName: "sparkles") }
+                .font(.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                Divider()
+            }
             Group {
                 switch tab {
                 case .now: NowTab()
@@ -61,7 +74,48 @@ struct PopupView: View {
             .padding(.vertical, 8)
         }
         .frame(width: 360, height: 540)
+        .overlay {
+            if model.showingReleaseNotes { ReleaseNotesView().background(.background) }
+        }
         .background(RightAligner())
+        // The popup is the app's only window, so losing key means it closed.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            model.popupClosed()
+        }
+    }
+}
+
+private struct ReleaseNotesView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Release Notes").font(.headline)
+                Spacer()
+                Button("Done") { model.showingReleaseNotes = false }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(12)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if Release.notes.isEmpty {
+                        Text("No release notes in this build.").foregroundStyle(.secondary)
+                    }
+                    ForEach(Release.notes, id: \.version) { release in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Version \(release.version)").font(.headline)
+                            Text((try? AttributedString(markdown: release.notes, options: .init(
+                                interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(release.notes))
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+            }
+        }
     }
 }
 

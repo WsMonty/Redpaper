@@ -19,10 +19,15 @@ swift build -c release
 # Version = latest git tag (v1.2 → 1.2); the app compares it with the newest GitHub release.
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo 1.0)
 VERSION=${VERSION#v}
+if ! grep -qx "## $VERSION" RELEASE_NOTES.md; then
+    echo "RELEASE_NOTES.md has no '## $VERSION' section. Add release notes for v$VERSION." >&2
+    exit 1
+fi
 APP=build/Redpaper.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Redpaper "$APP/Contents/MacOS/"
+cp RELEASE_NOTES.md "$APP/Contents/Resources/"
 cp icon/AppIcon.icns "$APP/Contents/Resources/"  # regenerate: swift icon/make_icon.swift
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

@@ -157,14 +157,17 @@ struct SettingsTab: View {
             Text("Asks GitHub once a day whether a newer version exists.")
                 .font(.caption).foregroundStyle(.secondary)
             LabeledContent("Version \(Release.current ?? "unknown")") {
-                Button(checkingUpdate ? "Checking…" : "Check Now") {
-                    checkingUpdate = true
-                    Task {
-                        updateMessage = await model.checkForUpdateNow()
-                        checkingUpdate = false
+                HStack {
+                    Button("Release Notes") { model.showReleaseNotes() }
+                    Button(checkingUpdate ? "Checking…" : "Check Now") {
+                        checkingUpdate = true
+                        Task {
+                            updateMessage = await model.checkForUpdateNow()
+                            checkingUpdate = false
+                        }
                     }
+                    .disabled(checkingUpdate)
                 }
-                .disabled(checkingUpdate)
             }
             if !updateMessage.isEmpty { Text(updateMessage).font(.caption) }
         }
