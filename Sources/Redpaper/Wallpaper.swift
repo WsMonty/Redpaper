@@ -11,6 +11,12 @@ struct Applied: Codable, Hashable {
     var date = Date()
 }
 
+/// One run's candidates for a set of screens (display ids); the first was applied.
+struct Picks: Codable, Hashable {
+    let screens: [String]
+    let items: [Applied]
+}
+
 extension NSScreen {
     var key: String {
         "\((deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0)"
