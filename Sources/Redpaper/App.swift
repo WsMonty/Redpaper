@@ -162,6 +162,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var history: [Applied] = AppModel.load("history") ?? [] {
         didSet { save(history, "history") }
     }
+    /// This run's best candidates per screen group (the first one was applied), to switch between
+    /// without waiting for Reddit.
+    @Published private(set) var picks: [Picks] = AppModel.load("picks") ?? [] {
+        didSet { save(picks, "picks") }
+    }
     /// Wallpapers the user chose to keep, newest first. Never deleted automatically.
     @Published private(set) var kept: [Applied] = AppModel.load("kept") ?? [] {
         didSet { save(kept, "kept") }
@@ -176,6 +181,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var justUpdated = false
     @Published var showingReleaseNotes = false
     static let historyLimit = 7
+    /// Candidates kept per run (Settings, 1–5).
+    static var pickCount: Int { min(max(UserDefaults.standard.integer(forKey: "pickCount"), 1), 5) }
     private var lastUpdateCheck = Date.distantPast
     private var retryAfter: Date?
     private var timer: Timer?
@@ -193,7 +200,7 @@ final class AppModel: ObservableObject {
 
     init() {
         UserDefaults.standard.register(defaults: [
-            "subreddits": "wallpapers", "customSubreddits": "", "minFit": SettingsTab.safeFit, "skipNSFW": true, "sameOnAllScreens": true,
+            "subreddits": "wallpapers", "customSubreddits": "", "minFit": SettingsTab.safeFit, "skipNSFW": true, "sameOnAllScreens": true, "pickCount": 3,
             "frequency": Frequency.daily.rawValue, "updateMinutes": 9 * 60, "weekday": 2, "checkForUpdates": true,
         ])
         if let version = Release.current, UserDefaults.standard.string(forKey: "notesSeenVersion") != version {
@@ -268,41 +275,49 @@ final class AppModel: ObservableObject {
             let combined = try await posts(subs, maxAge: maxAge)
             var exclude = Set(seen)
             var missed = 0
+            var newPicks: [Picks] = []
             // One group with every screen (same image everywhere), or one group per screen.
             let same = d.bool(forKey: "sameOnAllScreens")
             let groups = same ? [NSScreen.screens] : NSScreen.screens.map { [$0] }
             for group in groups {
                 let sizes = group.map(\.pixelSize)
-                var picked: (Post, URL)?
-                // Try the subreddit whose turn it is, then the following ones.
-                for step in 0..<subs.count where picked == nil {
+                var found: [(Post, URL)] = []
+                // Try the subreddit whose turn it is, then the following ones, until there are enough candidates.
+                let pickCount = Self.pickCount
+                for step in 0..<subs.count where found.count < pickCount {
                     let i = (rotation + step) % subs.count
                     let mine = { (posts: [Post]) in posts.filter { $0.subreddit.caseInsensitiveCompare(subs[i]) == .orderedSame } }
-                    picked = await pick(from: mine(combined), for: sizes, minFit: minFit,
-                                        skipNSFW: skipNSFW, exclude: exclude)
+                    var got = await pick(from: mine(combined), for: sizes, minFit: minFit, skipNSFW: skipNSFW,
+                                         exclude: exclude, limit: pickCount - found.count)
                     // Busy subreddits crowd quiet ones out of the combined feed: fetch the quiet one alone.
-                    if picked == nil, subs.count > 1, let own = try? await posts([subs[i]], maxAge: maxAge) {
-                        picked = await pick(from: mine(own), for: sizes, minFit: minFit,
-                                            skipNSFW: skipNSFW, exclude: exclude)
+                    // Only for the first candidate: extras aren't worth a rate-limit wait.
+                    if got.isEmpty, found.isEmpty, subs.count > 1, let own = try? await posts([subs[i]], maxAge: maxAge) {
+                        got = await pick(from: mine(own), for: sizes, minFit: minFit, skipNSFW: skipNSFW,
+                                         exclude: exclude, limit: pickCount)
                     }
-                    if picked != nil { rotation = (i + 1) % subs.count }
+                    if found.isEmpty, !got.isEmpty { rotation = (i + 1) % subs.count }
+                    found += got
+                    exclude.formUnion(got.map(\.0.id))
                 }
-                guard let (post, file) = picked else { missed += 1; continue }
-                let shown = Applied(id: post.id, file: file.path, title: post.title,
-                                    permalink: post.permalink, subreddit: post.subreddit)
+                let candidates = found.map { post, file in
+                    Applied(id: post.id, file: file.path, title: post.title,
+                            permalink: post.permalink, subreddit: post.subreddit)
+                }
+                guard let shown = candidates.first else { missed += 1; continue }
+                newPicks.append(Picks(screens: group.map(\.key), items: candidates))
+                seen += candidates.map(\.id) // offered, so later runs don't repeat them
                 // Same everywhere: also cover screens not connected right now (e.g. an external display
                 // that reconnects only after wake), so reapply() gives them this image, not the old one.
                 if same { applied = applied.mapValues { _ in shown } }
                 for screen in group {
-                    try Wallpaper.set(file, on: screen)
+                    try Wallpaper.set(URL(fileURLWithPath: shown.file), on: screen)
                     applied[screen.key] = shown
                 }
                 // Screens may have connected while we waited for Reddit.
                 if same { reapply() }
-                history = [shown] + history.filter { $0.id != post.id }.prefix(Self.historyLimit - 1)
-                exclude.insert(post.id)
-                seen.append(post.id)
+                addToHistory(shown)
             }
+            picks = newPicks
             cleanUp()
             d.set(Date().timeIntervalSince1970, forKey: "lastUpdate")
             retryAfter = nil
@@ -333,6 +348,24 @@ final class AppModel: ObservableObject {
         status = ""
     }
 
+    /// Switches to another of this run's candidates on its screens. The schedule is unaffected.
+    func choose(_ item: Applied, in group: Picks) {
+        if UserDefaults.standard.bool(forKey: "sameOnAllScreens") {
+            restore(item)
+        } else {
+            for screen in NSScreen.screens where group.screens.contains(screen.key) {
+                try? Wallpaper.set(URL(fileURLWithPath: item.file), on: screen)
+                applied[screen.key] = item
+            }
+        }
+        addToHistory(item)
+        cleanUp()
+    }
+
+    private func addToHistory(_ item: Applied) {
+        history = [item] + history.filter { $0.id != item.id }.prefix(Self.historyLimit - 1)
+    }
+
     /// Saves what's on screen to "Kept" and stops the schedule.
     func keepCurrent() {
         let ids = Set(kept.map(\.id))
@@ -361,13 +394,14 @@ final class AppModel: ObservableObject {
     }
 
     private func cleanUp() {
-        Wallpaper.cleanUp(keeping: Set((history + kept + applied.values).map(\.file)))
+        Wallpaper.cleanUp(keeping: Set((history + kept + applied.values + picks.flatMap(\.items)).map(\.file)))
     }
 
-    /// First post (newest first) that fits every screen in `screens` and downloads.
+    /// First `limit` posts (newest first) that fit every screen in `screens` and download.
     /// Sizes missing from titles are probed lazily.
     private func pick(from posts: [Post], for screens: [CGSize], minFit: Double, skipNSFW: Bool,
-                      exclude: Set<String>) async -> (Post, URL)? {
+                      exclude: Set<String>, limit: Int) async -> [(Post, URL)] {
+        var found: [(Post, URL)] = []
         for post in posts where !(skipNSFW && post.nsfw) && !exclude.contains(post.id) {
             var size = post.width.flatMap { w in post.height.map { CGSize(width: w, height: $0) } } ?? probedSizes[post.id]
             if size == nil {
@@ -378,9 +412,10 @@ final class AppModel: ObservableObject {
                       Reddit.fit(imageW: size.width, imageH: size.height, screenW: $0.width, screenH: $0.height) >= minFit
                   }),
                   let file = try? await Wallpaper.download(post) else { continue }
-            return (post, file)
+            found.append((post, file))
+            if found.count == limit { break }
         }
-        return nil
+        return found
     }
 
     /// Cached post list for `subs`, refetched when older than `maxAge`. Signed out, requests are spaced

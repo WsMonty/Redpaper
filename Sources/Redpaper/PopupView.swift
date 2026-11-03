@@ -158,6 +158,8 @@ private struct NowTab: View {
     @AppStorage("updateMinutes") private var updateMinutes = 9 * 60
     @AppStorage("weekday") private var weekday = 2
     @AppStorage("lastUpdate") private var lastUpdate = 0.0
+    @AppStorage("showPicks") private var showPicks = false
+    @AppStorage("pickCount") private var pickCount = 3
 
     var body: some View {
         ScrollView {
@@ -210,9 +212,41 @@ private struct NowTab: View {
                 if !model.status.isEmpty {
                     Text(model.status).font(.caption).foregroundStyle(.orange)
                 }
+                let shownPicks = model.picks.map(\.items.count).max() ?? 0
+                if pickCount > 1, shownPicks > 1 {
+                    // hand-rolled, macOS DisclosureGroup only toggles on the chevron and indents its content.
+                    Button { showPicks.toggle() } label: {
+                        HStack {
+                            Text("This time's top \(shownPicks)").font(.headline)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .rotationEffect(.degrees(showPicks ? 90 : 0))
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if showPicks {
+                        ForEach(model.picks, id: \.self) { group in
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: shownPicks),
+                                      spacing: 8) {
+                                ForEach(group.items, id: \.id) { item in
+                                    Button { model.choose(item, in: group) } label: {
+                                        Thumbnail(path: item.file)
+                                            .selected(model.current.contains { $0.id == item.id })
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(item.title)
+                                }
+                            }
+                        }
+                    }
+                }
             }
             .padding(14)
         }
+        // the scroller would take width, which resizes the aspect-ratio images, which toggles the scroller (flicker).
+        .scrollIndicators(.never)
     }
 
     private var nextText: String {
@@ -271,14 +305,7 @@ private struct HistoryTab: View {
     private func cell(_ item: Applied) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Thumbnail(path: item.file)
-                .overlay(alignment: .topTrailing) {
-                    if model.current.contains(where: { $0.id == item.id }) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.white, Color.accentColor)
-                            .padding(5)
-                    }
-                }
+                .selected(model.current.contains { $0.id == item.id })
             Text(item.title).font(.caption).lineLimit(1)
             Text("r/\(item.subreddit) · \(item.date.formatted(.relative(presentation: .named)))")
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -306,5 +333,19 @@ struct Thumbnail: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .task(id: path) { image = await Wallpaper.thumbnail(path) }
+    }
+}
+
+extension View {
+    /// Checkmark badge for the wallpaper that's on screen.
+    func selected(_ on: Bool) -> some View {
+        overlay(alignment: .topTrailing) {
+            if on {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white, Color.accentColor)
+                    .padding(5)
+            }
+        }
     }
 }

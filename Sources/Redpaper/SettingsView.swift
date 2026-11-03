@@ -14,6 +14,7 @@ struct SettingsTab: View {
     @AppStorage("minFit") private var minFit = SettingsTab.safeFit
     @AppStorage("skipNSFW") private var skipNSFW = true
     @AppStorage("sameOnAllScreens") private var sameOnAllScreens = true
+    @AppStorage("pickCount") private var pickCount = 3
     @AppStorage("frequency") private var frequency = Frequency.daily.rawValue
     @AppStorage("updateMinutes") private var updateMinutes = 9 * 60
     @AppStorage("weekday") private var weekday = 2
@@ -124,6 +125,9 @@ struct SettingsTab: View {
             Toggle("Skip NSFW posts", isOn: $skipNSFW)
             Toggle("Same wallpaper on all screens", isOn: $sameOnAllScreens)
             Text(sameOnAllScreens ? "The image must fit every connected screen." : "Each screen gets its own best-fitting image.")
+                .font(.caption).foregroundStyle(.secondary)
+            Stepper("Images per update: \(pickCount)", value: $pickCount, in: 1...5)
+            Text(pickCount == 1 ? "Only the wallpaper itself is downloaded." : "The best \(pickCount) are downloaded, so you can switch between them on the Now tab without waiting for Reddit.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
