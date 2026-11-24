@@ -33,9 +33,9 @@ read -r -p "Tag, build and publish $TAG? [y/N] " answer
 git tag "$TAG"
 trap 'git tag -d "$TAG" >/dev/null; echo "Build failed; removed tag $TAG." >&2' ERR
 ./build.sh
-build/Redpaper.app/Contents/MacOS/Redpaper --selftest
+"build/Easy Backgrounds.app/Contents/MacOS/EasyBackgrounds" --selftest
 trap - ERR
 
 git push origin "$TAG"
-gh release create "$TAG" --title "Redpaper $VERSION" --notes "$NOTES"
+gh release create "$TAG" --title "Easy Backgrounds $VERSION" --notes "$NOTES"
 echo "Released $TAG. Run ./deploy.sh to install it here."

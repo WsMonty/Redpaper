@@ -7,104 +7,108 @@ struct SettingsTab: View {
     static let safeFit = 0.8
 
     @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var auth: Auth
-    @AppStorage("subreddits") private var subreddits = "wallpapers"
-    @AppStorage("customSubreddits") private var customSubreddits = ""
+    @AppStorage("topics") private var topics = Wallhaven.defaultTopics.joined(separator: ",")
+    @AppStorage("selectedTopics") private var selectedTopics = Wallhaven.defaultTopics.joined(separator: ",")
     @AppStorage("sort") private var sort = Sort.new.rawValue
     @AppStorage("minFit") private var minFit = SettingsTab.safeFit
-    @AppStorage("skipNSFW") private var skipNSFW = true
     @AppStorage("sameOnAllScreens") private var sameOnAllScreens = true
     @AppStorage("pickCount") private var pickCount = 3
     @AppStorage("frequency") private var frequency = Frequency.daily.rawValue
     @AppStorage("updateMinutes") private var updateMinutes = 9 * 60
     @AppStorage("weekday") private var weekday = 2
     @AppStorage("checkForUpdates") private var checkForUpdates = true
-    @State private var newSub = ""
-    @State private var subMessage = ""
+    @State private var newTopic = ""
+    @State private var topicMessage = ""
     @State private var checking = false
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError = ""
-    @State private var accountError = ""
-    @State private var signingIn = false
     @State private var checkingUpdate = false
     @State private var updateMessage = ""
 
     var body: some View {
         Form {
-            subredditSection
+            topicSection
             fitSection
             scheduleSection
-            accountSection
         }
         .formStyle(.grouped)
     }
 
-    // MARK: Subreddits
+    // MARK: Topics
 
-    private var subredditSection: some View {
+    private var topicSection: some View {
         Section {
-            ForEach(Reddit.presets + customSubreddits.commaList, id: \.self) { name in
+            ForEach(topics.commaList, id: \.self) { name in
                 HStack {
-                    Toggle("r/\(name)", isOn: selected(name)).toggleStyle(.checkbox)
+                    Toggle(name, isOn: selected(name)).toggleStyle(.checkbox)
                     Spacer()
-                    if !Reddit.presets.contains(name) {
-                        Button { remove(name) } label: { Image(systemName: "minus.circle") }
-                            .buttonStyle(.borderless)
-                            .help("Remove r/\(name)")
-                    }
+                    Button { remove(name) } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.borderless)
+                        .help("Remove \(name)")
                 }
             }
             HStack {
-                TextField("Add", text: $newSub, prompt: Text("Add a subreddit, e.g. ImaginaryLandscapes"))
+                TextField("Add", text: $newTopic, prompt: Text("Add a topic, e.g. mountains"))
                     .labelsHidden()
-                    .onSubmit(add)
-                Button("Add", action: add).disabled(checking || newSub.isEmpty)
+                    .onSubmit { add(newTopic) }
+                Menu("Popular") {
+                    ForEach(Wallhaven.popularTopics.filter { !contains($0) }, id: \.self) { name in
+                        Button(name) { add(name) }
+                    }
+                }
+                .fixedSize()
+                .disabled(checking)
+                Button("Add") { add(newTopic) }.disabled(checking || newTopic.isEmpty)
             }
-            if !subMessage.isEmpty { Text(subMessage).font(.caption).foregroundStyle(.secondary) }
+            if !topicMessage.isEmpty { Text(topicMessage).font(.caption).foregroundStyle(.secondary) }
             Picker("Pick from", selection: $sort) {
                 ForEach(Sort.allCases) { Text($0.label).tag($0.rawValue) }
             }
         } header: {
-            Text("Subreddits")
+            Text("Topics")
         } footer: {
             Text(sort == Sort.new.rawValue
-                 ? "Redpaper picks the newest fitting image, taking turns between the selected subreddits."
-                 : "Redpaper picks the most upvoted fitting image, taking turns between the selected subreddits.")
+                 ? "Easy Backgrounds picks the newest fitting wallpaper from Wallhaven, taking turns between the selected topics."
+                 : "Easy Backgrounds picks the most popular fitting wallpaper from Wallhaven, taking turns between the selected topics.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
 
+    private func contains(_ name: String) -> Bool {
+        topics.commaList.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+    }
+
     private func selected(_ name: String) -> Binding<Bool> {
-        Binding(get: { subreddits.commaList.contains(name) }, set: { on in
-            subreddits = (subreddits.commaList.filter { $0 != name } + (on ? [name] : [])).joined(separator: ",")
+        Binding(get: { selectedTopics.commaList.contains(name) }, set: { on in
+            selectedTopics = (selectedTopics.commaList.filter { $0 != name } + (on ? [name] : [])).joined(separator: ",")
         })
     }
 
     private func remove(_ name: String) {
-        customSubreddits = customSubreddits.commaList.filter { $0 != name }.joined(separator: ",")
+        topics = topics.commaList.filter { $0 != name }.joined(separator: ",")
         selected(name).wrappedValue = false
     }
 
-    private func add() {
-        let name = newSub.trimmingCharacters(in: .whitespaces)
-            .replacingOccurrences(of: "^/?r/", with: "", options: [.regularExpression, .caseInsensitive])
-        guard Reddit.isValidName(name) else { subMessage = "That's not a valid subreddit name."; return }
-        guard !(Reddit.presets + customSubreddits.commaList).contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame })
-        else { subMessage = "r/\(name) is already in the list."; return }
+    /// Adds a topic after checking that Wallhaven has wallpapers for it.
+    private func add(_ raw: String) {
+        let name = raw.replacingOccurrences(of: ",", with: " ").trimmingCharacters(in: .whitespaces) // commas separate the stored list
+        guard (1...50).contains(name.count) else { topicMessage = "A topic is a word or short phrase."; return }
+        guard !contains(name) else { topicMessage = "\"\(name)\" is already in the list."; return }
         checking = true
-        subMessage = "Checking r/\(name)…"
+        topicMessage = "Checking \"\(name)\"…"
         Task {
             defer { checking = false }
             do {
-                let posts = try await model.posts([name], maxAge: 30 * 60)
-                customSubreddits = (customSubreddits.commaList + [name]).joined(separator: ",")
+                guard try await !model.posts(name, maxAge: 30 * 60).isEmpty else {
+                    topicMessage = "Wallhaven has no wallpapers for \"\(name)\"."
+                    return
+                }
+                topics = (topics.commaList + [name]).joined(separator: ",")
                 selected(name).wrappedValue = true
-                newSub = ""
-                subMessage = posts.isEmpty
-                    ? "Added r/\(name), but its newest posts contain no images."
-                    : "Added r/\(name) (\(posts.count) image posts found)."
+                if raw == newTopic { newTopic = "" }
+                topicMessage = "Added \"\(name)\"."
             } catch {
-                subMessage = error.localizedDescription
+                topicMessage = error.localizedDescription
             }
         }
     }
@@ -122,12 +126,11 @@ struct SettingsTab: View {
                 Label("Above \(Int(Self.safeFit * 100)) %, it will probably be harder to find an image, especially on MacBook screens (16:10), where most wallpapers (16:9) top out at 87 %.", systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange)
             }
-            Toggle("Skip NSFW posts", isOn: $skipNSFW)
             Toggle("Same wallpaper on all screens", isOn: $sameOnAllScreens)
             Text(sameOnAllScreens ? "The image must fit every connected screen." : "Each screen gets its own best-fitting image.")
                 .font(.caption).foregroundStyle(.secondary)
             Stepper("Images per update: \(pickCount)", value: $pickCount, in: 1...5)
-            Text(pickCount == 1 ? "Only the wallpaper itself is downloaded." : "The best \(pickCount) are downloaded, so you can switch between them on the Now tab without waiting for Reddit.")
+            Text(pickCount == 1 ? "Only the wallpaper itself is downloaded." : "The best \(pickCount) are downloaded, so you can switch between them on the Now tab right away.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -184,32 +187,5 @@ struct SettingsTab: View {
                 let c = Calendar.current.dateComponents([.hour, .minute], from: $0)
                 updateMinutes = (c.hour ?? 0) * 60 + (c.minute ?? 0)
             })
-    }
-
-    // MARK: Account
-
-    private var accountSection: some View {
-        Section("Reddit account") {
-            if !Auth.isConfigured {
-                Text("Not needed: Redpaper uses Reddit's public feed. Sign-in needs a Reddit-approved API app; once you have one, paste its client ID into Auth.swift and rebuild.")
-                    .font(.caption).foregroundStyle(.secondary)
-            } else if auth.signedIn {
-                LabeledContent("Signed in as", value: auth.username.map { "u/\($0)" } ?? "Reddit user")
-                Button("Sign Out") { auth.signOut() }
-            } else {
-                Button(signingIn ? "Waiting for Reddit…" : "Sign in with Reddit") {
-                    signingIn = true
-                    accountError = ""
-                    Task {
-                        do { try await auth.signIn() }
-                        catch is CancellationError {}
-                        catch { accountError = error.localizedDescription }
-                        signingIn = false
-                    }
-                }
-                .disabled(signingIn)
-            }
-            if !accountError.isEmpty { Text(accountError).font(.caption).foregroundStyle(.red) }
-        }
     }
 }
