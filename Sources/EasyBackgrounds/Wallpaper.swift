@@ -7,7 +7,7 @@ struct Applied: Codable, Hashable {
     let file: String
     let title: String
     let permalink: String
-    let subreddit: String
+    let topic: String
     var date = Date()
 }
 
@@ -28,7 +28,7 @@ extension NSScreen {
 
 enum Wallpaper {
     static let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Redpaper", isDirectory: true)
+        .appendingPathComponent("Easy Backgrounds", isDirectory: true)
 
     /// Unique filename per post: macOS caches wallpapers by path.
     static func download(_ post: Post) async throws -> URL {
@@ -38,7 +38,7 @@ enum Wallpaper {
         if fm.fileExists(atPath: file.path) { return file }
 
         var req = URLRequest(url: post.imageURL)
-        req.setValue(Reddit.userAgent, forHTTPHeaderField: "User-Agent")
+        req.setValue(Wallhaven.userAgent, forHTTPHeaderField: "User-Agent")
         let (tmp, resp) = try await URLSession.shared.download(for: req)
         let http = resp as? HTTPURLResponse
         guard http?.statusCode == 200, http?.mimeType?.hasPrefix("image/") == true else {
@@ -49,19 +49,6 @@ enum Wallpaper {
         return file
     }
 
-    /// Reads the pixel size from the first 128 KB of the image (headers sit at the start).
-    static func probeSize(_ url: URL) async -> CGSize? {
-        var req = URLRequest(url: url)
-        req.setValue("bytes=0-131071", forHTTPHeaderField: "Range")
-        req.setValue(Reddit.userAgent, forHTTPHeaderField: "User-Agent")
-        guard let (data, _) = try? await URLSession.shared.data(for: req),
-              let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let w = props[kCGImagePropertyPixelWidth] as? Double,
-              let h = props[kCGImagePropertyPixelHeight] as? Double else { return nil }
-        return CGSize(width: w, height: h)
-    }
-
     /// Fill the screen, cropping whatever doesn't fit.
     static func set(_ file: URL, on screen: NSScreen) throws {
         try NSWorkspace.shared.setDesktopImageURL(file, for: screen, options: [
@@ -70,14 +57,14 @@ enum Wallpaper {
         ])
     }
 
-    /// Copies a wallpaper to ~/Pictures/Redpaper, named after its post title, and returns the copy.
+    /// Copies a wallpaper to ~/Pictures/Easy Backgrounds, named after its title, and returns the copy.
     static func saveToPictures(_ item: Applied) throws -> URL {
         let fm = FileManager.default
-        let dir = fm.urls(for: .picturesDirectory, in: .userDomainMask)[0].appendingPathComponent("Redpaper", isDirectory: true)
+        let dir = fm.urls(for: .picturesDirectory, in: .userDomainMask)[0].appendingPathComponent("Easy Backgrounds", isDirectory: true)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         let source = URL(fileURLWithPath: item.file)
         let name = String(item.title.replacingOccurrences(of: "[/:]", with: "-", options: .regularExpression).prefix(120))
-        // Title clash: add the post id. If that exists too, this image was already saved.
+        // Title clash: add the wallpaper id. If that exists too, this image was already saved.
         for candidate in [name, "\(name) (\(item.id))"] {
             let target = dir.appendingPathComponent(candidate).appendingPathExtension(source.pathExtension)
             if fm.fileExists(atPath: target.path) { continue }

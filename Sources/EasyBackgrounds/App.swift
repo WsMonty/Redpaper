@@ -2,12 +2,12 @@ import AppKit
 import SwiftUI
 
 @main
-struct RedpaperApp: App {
+struct EasyBackgroundsApp: App {
     @StateObject private var model = AppModel()
 
     init() {
         if CommandLine.arguments.contains("--selftest") {
-            Reddit.selfTest()
+            Wallhaven.selfTest()
             Schedule.selfTest()
             Release.selfTest()
             print("selftest ok")
@@ -17,7 +17,7 @@ struct RedpaperApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            PopupView().environmentObject(model).environmentObject(model.auth)
+            PopupView().environmentObject(model)
         } label: {
             Image(nsImage: .menuBarIcon)
         }
@@ -149,10 +149,9 @@ struct Release: Decodable {
 
 @MainActor
 final class AppModel: ObservableObject {
-    let auth = Auth()
     @Published private(set) var busy = false
     @Published private(set) var status = ""
-    /// Set while waiting out Reddit's rate limit, so the popup can count down.
+    /// Set while waiting out Wallhaven's rate limit, so the popup can count down.
     @Published private(set) var waitUntil: Date?
     /// What's on each screen, keyed by display id.
     @Published private(set) var applied: [String: Applied] = AppModel.load("applied") ?? [:] {
@@ -163,7 +162,7 @@ final class AppModel: ObservableObject {
         didSet { save(history, "history") }
     }
     /// This run's best candidates per screen group (the first one was applied), to switch between
-    /// without waiting for Reddit.
+    /// without downloading again.
     @Published private(set) var picks: [Picks] = AppModel.load("picks") ?? [] {
         didSet { save(picks, "picks") }
     }
@@ -187,20 +186,21 @@ final class AppModel: ObservableObject {
     private var retryAfter: Date?
     private var timer: Timer?
     private var cache: [String: (date: Date, posts: [Post])] = [:]
-    private var lastFetch = Date.distantPast
-    private var probedSizes: [String: CGSize] = [:]
-    /// Post ids already shown (or skipped), newest last, so "Next" and scheduled updates never repeat.
+    /// Wallpaper ids already shown (or skipped), newest last, so "Next" and scheduled updates never repeat.
     private var seen = UserDefaults.standard.stringArray(forKey: "seen") ?? [] {
-        didSet { UserDefaults.standard.set(Array(seen.suffix(1000)), forKey: "seen") }
+        // Never trimmed: "never repeat" has to hold forever.
+        // ponytail: ~10 bytes per id, so even hourly × 5 for a year is ~0.5 MB; move to a file if that ever matters.
+        didSet { UserDefaults.standard.set(seen, forKey: "seen") }
     }
-    /// Index into the selected subreddits whose turn is next.
+    /// Index into the selected topics whose turn is next.
     private var rotation = UserDefaults.standard.integer(forKey: "rotation") {
         didSet { UserDefaults.standard.set(rotation, forKey: "rotation") }
     }
 
     init() {
         UserDefaults.standard.register(defaults: [
-            "subreddits": "wallpapers", "customSubreddits": "", "minFit": SettingsTab.safeFit, "skipNSFW": true, "sameOnAllScreens": true, "pickCount": 3,
+            "topics": Wallhaven.defaultTopics.joined(separator: ","), "selectedTopics": Wallhaven.defaultTopics.joined(separator: ","),
+            "minFit": SettingsTab.safeFit, "sameOnAllScreens": true, "pickCount": 3,
             "frequency": Frequency.daily.rawValue, "updateMinutes": 9 * 60, "weekday": 2, "checkForUpdates": true,
         ])
         if let version = Release.current, UserDefaults.standard.string(forKey: "notesSeenVersion") != version {
@@ -243,8 +243,8 @@ final class AppModel: ObservableObject {
         return NSScreen.screens.compactMap { applied[$0.key] }.filter { seen.insert($0.file).inserted }
     }
 
-    /// Selected subreddits, stored comma-separated (AppStorage can't hold arrays).
-    static var subreddits: [String] { (UserDefaults.standard.string(forKey: "subreddits") ?? "").commaList }
+    /// Selected topics, stored comma-separated (AppStorage can't hold arrays).
+    static var topics: [String] { (UserDefaults.standard.string(forKey: "selectedTopics") ?? "").commaList }
 
     static var sort: Sort { Sort(rawValue: UserDefaults.standard.string(forKey: "sort") ?? "") ?? .new }
 
@@ -257,8 +257,8 @@ final class AppModel: ObservableObject {
             weekday: d.integer(forKey: "weekday"))
     }
 
-    /// Shows a new wallpaper, taking turns between the selected subreddits. `fresh` refetches
-    /// posts (scheduled runs); otherwise the cached list is reused, so "Next" usually costs no request.
+    /// Shows a new wallpaper, taking turns between the selected topics. `fresh` refetches
+    /// results (scheduled runs); otherwise cached results are reused, so "Next" usually costs no request.
     func update(fresh: Bool = false) async {
         guard !busy else { return }
         busy = true
@@ -266,13 +266,11 @@ final class AppModel: ObservableObject {
         defer { busy = false }
 
         let d = UserDefaults.standard
-        let subs = Self.subreddits
-        guard !subs.isEmpty else { status = "Select at least one subreddit in Settings."; return }
+        let topics = Self.topics
+        guard !topics.isEmpty else { status = "Select at least one topic in Settings."; return }
         let minFit = d.double(forKey: "minFit")
-        let skipNSFW = d.bool(forKey: "skipNSFW")
         let maxAge: TimeInterval = fresh ? 60 : 30 * 60
         do {
-            let combined = try await posts(subs, maxAge: maxAge)
             var exclude = Set(seen)
             var missed = 0
             var newPicks: [Picks] = []
@@ -281,27 +279,31 @@ final class AppModel: ObservableObject {
             let groups = same ? [NSScreen.screens] : NSScreen.screens.map { [$0] }
             for group in groups {
                 let sizes = group.map(\.pixelSize)
+                // Only ask Wallhaven for images big enough to reach minFit on the group's smallest screen.
+                // ponytail: drops odd shapes that would just pass (e.g. 4:3 on 16:10); fine for real wallpapers.
+                let small = sizes.min { $0.width * $0.height < $1.width * $1.height } ?? .zero
+                let atleast = CGSize(width: (small.width * minFit.squareRoot()).rounded(.down),
+                                     height: (small.height * minFit.squareRoot()).rounded(.down))
                 var found: [(Post, URL)] = []
-                // Try the subreddit whose turn it is, then the following ones, until there are enough candidates.
+                // Try the topic whose turn it is, then the following ones, until there are enough candidates.
                 let pickCount = Self.pickCount
-                for step in 0..<subs.count where found.count < pickCount {
-                    let i = (rotation + step) % subs.count
-                    let mine = { (posts: [Post]) in posts.filter { $0.subreddit.caseInsensitiveCompare(subs[i]) == .orderedSame } }
-                    var got = await pick(from: mine(combined), for: sizes, minFit: minFit, skipNSFW: skipNSFW,
-                                         exclude: exclude, limit: pickCount - found.count)
-                    // Busy subreddits crowd quiet ones out of the combined feed: fetch the quiet one alone.
-                    // Only for the first candidate: extras aren't worth a rate-limit wait.
-                    if got.isEmpty, found.isEmpty, subs.count > 1, let own = try? await posts([subs[i]], maxAge: maxAge) {
-                        got = await pick(from: mine(own), for: sizes, minFit: minFit, skipNSFW: skipNSFW,
-                                         exclude: exclude, limit: pickCount)
+                for step in 0..<topics.count where found.count < pickCount {
+                    let i = (rotation + step) % topics.count
+                    var got: [(Post, URL)] = []
+                    // All of page 1 already seen (e.g. the same top list all day): look a few pages further.
+                    for page in 1...3 {
+                        let results = try await posts(topics[i], page: page, atleast: atleast, maxAge: maxAge)
+                        got = await pick(from: results, for: sizes, minFit: minFit, exclude: exclude,
+                                         limit: pickCount - found.count)
+                        if !got.isEmpty || results.count < 24 { break } // 24 per page: fewer means the last one
                     }
-                    if found.isEmpty, !got.isEmpty { rotation = (i + 1) % subs.count }
+                    if found.isEmpty, !got.isEmpty { rotation = (i + 1) % topics.count }
                     found += got
                     exclude.formUnion(got.map(\.0.id))
                 }
                 let candidates = found.map { post, file in
                     Applied(id: post.id, file: file.path, title: post.title,
-                            permalink: post.permalink, subreddit: post.subreddit)
+                            permalink: post.permalink, topic: post.topic)
                 }
                 guard let shown = candidates.first else { missed += 1; continue }
                 newPicks.append(Picks(screens: group.map(\.key), items: candidates))
@@ -313,7 +315,7 @@ final class AppModel: ObservableObject {
                     try Wallpaper.set(URL(fileURLWithPath: shown.file), on: screen)
                     applied[screen.key] = shown
                 }
-                // Screens may have connected while we waited for Reddit.
+                // Screens may have connected while we waited for Wallhaven.
                 if same { reapply() }
                 addToHistory(shown)
             }
@@ -322,12 +324,12 @@ final class AppModel: ObservableObject {
             d.set(Date().timeIntervalSince1970, forKey: "lastUpdate")
             retryAfter = nil
             if missed > 0 {
-                status = "No new image with ≥ \(Int((minFit * 100).rounded())) % fit in \(Self.sort == .new ? "the newest" : "the top") posts"
+                status = "No new image with ≥ \(Int((minFit * 100).rounded())) % fit in \(Self.sort == .new ? "the newest" : "the top") wallpapers"
                     + (groups.count > 1 ? " for \(missed) screen(s)." : ".")
             }
         } catch {
             status = error.localizedDescription
-            // Offline (e.g. just woke up): try again next minute. Reddit trouble: back off.
+            // Offline (e.g. just woke up): try again next minute. Wallhaven trouble: back off.
             retryAfter = Date().addingTimeInterval(error is URLError ? 60 : 15 * 60)
         }
     }
@@ -384,7 +386,7 @@ final class AppModel: ObservableObject {
         cleanUp()
     }
 
-    /// Copies a wallpaper to ~/Pictures/Redpaper and shows it in Finder.
+    /// Copies a wallpaper to ~/Pictures/Easy Backgrounds and shows it in Finder.
     func saveToPictures(_ item: Applied) {
         do {
             NSWorkspace.shared.activateFileViewerSelecting([try Wallpaper.saveToPictures(item)])
@@ -397,19 +399,13 @@ final class AppModel: ObservableObject {
         Wallpaper.cleanUp(keeping: Set((history + kept + applied.values + picks.flatMap(\.items)).map(\.file)))
     }
 
-    /// First `limit` posts (newest first) that fit every screen in `screens` and download.
-    /// Sizes missing from titles are probed lazily.
-    private func pick(from posts: [Post], for screens: [CGSize], minFit: Double, skipNSFW: Bool,
+    /// First `limit` results (in sort order) that fit every screen in `screens` and download.
+    private func pick(from posts: [Post], for screens: [CGSize], minFit: Double,
                       exclude: Set<String>, limit: Int) async -> [(Post, URL)] {
         var found: [(Post, URL)] = []
-        for post in posts where !(skipNSFW && post.nsfw) && !exclude.contains(post.id) {
-            var size = post.width.flatMap { w in post.height.map { CGSize(width: w, height: $0) } } ?? probedSizes[post.id]
-            if size == nil {
-                size = await Wallpaper.probeSize(post.imageURL) ?? .zero // .zero: don't probe again
-                probedSizes[post.id] = size
-            }
-            guard let size, screens.allSatisfy({
-                      Reddit.fit(imageW: size.width, imageH: size.height, screenW: $0.width, screenH: $0.height) >= minFit
+        for post in posts where !exclude.contains(post.id) {
+            guard screens.allSatisfy({
+                      Wallhaven.fit(imageW: post.width, imageH: post.height, screenW: $0.width, screenH: $0.height) >= minFit
                   }),
                   let file = try? await Wallpaper.download(post) else { continue }
             found.append((post, file))
@@ -418,44 +414,27 @@ final class AppModel: ObservableObject {
         return found
     }
 
-    /// Cached post list for `subs`, refetched when older than `maxAge`. Signed out, requests are spaced
-    /// ≥ 61 s apart (Reddit's RSS limit is ~1/min) and a 429 waits for the reset once.
-    func posts(_ subs: [String], maxAge: TimeInterval) async throws -> [Post] {
-        let key = subs.map { $0.lowercased() }.sorted().joined(separator: "+") + "/" + Self.sort.rawValue
+    /// Cached results for `topic`, refetched when older than `maxAge`. A 429 waits a minute once.
+    func posts(_ topic: String, page: Int = 1, atleast: CGSize = .zero, maxAge: TimeInterval) async throws -> [Post] {
+        let key = "\(topic.lowercased())/\(Self.sort.rawValue)/\(page)/\(Int(atleast.width))x\(Int(atleast.height))"
         if let hit = cache[key], Date().timeIntervalSince(hit.date) < maxAge { return hit.posts }
-        if !auth.signedIn {
-            // Reserve the next slot before waiting, so concurrent callers queue up instead of colliding.
-            let slot = max(Date(), lastFetch.addingTimeInterval(61))
-            lastFetch = slot
-            if slot > Date() { try await waitForReddit(slot.timeIntervalSinceNow) }
-        }
-        lastFetch = max(lastFetch, Date())
+        let fetch = { try await Wallhaven.fetch(topic: topic, sort: Self.sort, page: page, atleast: atleast) }
         let posts: [Post]
         do {
-            posts = try await fetchPosts(subs)
-        } catch let limit as RateLimited {
-            try await waitForReddit(limit.reset + 1)
-            lastFetch = Date()
-            posts = try await fetchPosts(subs)
+            posts = try await fetch()
+        } catch is RateLimited {
+            try await waitForWallhaven(61)
+            posts = try await fetch()
         }
         cache[key] = (Date(), posts)
         return posts
     }
 
-    private func waitForReddit(_ seconds: Double) async throws {
+    private func waitForWallhaven(_ seconds: Double) async throws {
         let until = Date().addingTimeInterval(seconds)
         waitUntil = max(waitUntil ?? until, until)
         defer { if waitUntil == until { waitUntil = nil } }
         try await Task.sleep(for: .seconds(seconds))
-    }
-
-    /// Uses the signed-in API when available, the public feed otherwise.
-    private func fetchPosts(_ subs: [String]) async throws -> [Post] {
-        do {
-            return try await Reddit.fetch(subs: subs, sort: Self.sort, token: auth.accessToken())
-        } catch is Unauthorized where auth.signedIn {
-            return try await Reddit.fetch(subs: subs, sort: Self.sort, token: auth.refresh())
-        }
     }
 
     /// Asks GitHub at most once a day (once an hour after a network error).
@@ -475,7 +454,7 @@ final class AppModel: ObservableObject {
         lastUpdateCheck = Date()
         do {
             try await fetchUpdate()
-            return availableUpdate.map { "Redpaper \($0.version) is available." } ?? "Redpaper is up to date."
+            return availableUpdate.map { "Easy Backgrounds \($0.version) is available." } ?? "Easy Backgrounds is up to date."
         } catch let error as URLError {
             return error.localizedDescription
         } catch {

@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Redpaper",
+    name: "EasyBackgrounds",
     platforms: [.macOS(.v14)],
-    targets: [.executableTarget(name: "Redpaper")]
+    targets: [.executableTarget(name: "EasyBackgrounds")]
 )

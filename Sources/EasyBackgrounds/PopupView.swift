@@ -18,7 +18,7 @@ struct PopupView: View {
             if model.justUpdated, let version = Release.current {
                 Label {
                     HStack {
-                        Text("Redpaper was updated to \(version).")
+                        Text("Easy Backgrounds was updated to \(version).")
                         Button("What's new") { model.showReleaseNotes() }
                             .buttonStyle(.link)
                     }
@@ -39,7 +39,7 @@ struct PopupView: View {
             if let until = model.waitUntil {
                 Divider()
                 Label {
-                    Text("Reddit allows about one request a minute. Continuing in \(Text(until, style: .timer))")
+                    Text("Wallhaven is limiting requests. Continuing in \(Text(until, style: .timer))")
                         .monospacedDigit()
                 } icon: { Image(systemName: "hourglass") }
                 .font(.caption).foregroundStyle(.secondary)
@@ -51,10 +51,10 @@ struct PopupView: View {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
-                            Text("Redpaper \(update.version) is available.")
+                            Text("Easy Backgrounds \(update.version) is available.")
                             Link("What's new", destination: update.html_url)
                         }
-                        Text("To update, run `git pull && ./deploy.sh` in your Redpaper folder.")
+                        Text("To update, run `git pull && ./deploy.sh` in your Easy Backgrounds folder.")
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
@@ -66,7 +66,7 @@ struct PopupView: View {
             Divider()
             HStack {
                 Spacer()
-                Button("Quit Redpaper") { NSApp.terminate(nil) }
+                Button("Quit Easy Backgrounds") { NSApp.terminate(nil) }
                     .buttonStyle(.borderless)
                     .keyboardShortcut("q")
             }
@@ -173,7 +173,7 @@ private struct NowTab: View {
                         Text(item.title).font(.headline).lineLimit(2)
                         if let url = URL(string: item.permalink) {
                             Link(destination: url) {
-                                Label("r/\(item.subreddit)", systemImage: "arrow.up.right.square")
+                                Label("View on Wallhaven", systemImage: "arrow.up.right.square")
                             }
                             .font(.callout)
                         }
@@ -307,7 +307,7 @@ private struct HistoryTab: View {
             Thumbnail(path: item.file)
                 .selected(model.current.contains { $0.id == item.id })
             Text(item.title).font(.caption).lineLimit(1)
-            Text("r/\(item.subreddit) · \(item.date.formatted(.relative(presentation: .named)))")
+            Text(item.date.formatted(.relative(presentation: .named)))
                 .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
         }
         .contentShape(Rectangle())

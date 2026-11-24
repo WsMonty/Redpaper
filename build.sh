@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds build/Redpaper.app (no Xcode needed).
+# Builds "build/Easy Backgrounds.app" (no Xcode needed).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -23,10 +23,10 @@ if ! grep -qx "## $VERSION" RELEASE_NOTES.md; then
     echo "RELEASE_NOTES.md has no '## $VERSION' section. Add release notes for v$VERSION." >&2
     exit 1
 fi
-APP=build/Redpaper.app
+APP="build/Easy Backgrounds.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/Redpaper "$APP/Contents/MacOS/"
+cp .build/release/EasyBackgrounds "$APP/Contents/MacOS/"
 cp RELEASE_NOTES.md "$APP/Contents/Resources/"
 cp icon/AppIcon.icns "$APP/Contents/Resources/"  # regenerate: swift icon/make_icon.swift
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -34,10 +34,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key><string>local.Redpaper</string>
-    <key>CFBundleName</key><string>Redpaper</string>
+    <key>CFBundleIdentifier</key><string>local.EasyBackgrounds</string>
+    <key>CFBundleName</key><string>Easy Backgrounds</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
-    <key>CFBundleExecutable</key><string>Redpaper</string>
+    <key>CFBundleExecutable</key><string>EasyBackgrounds</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>1</string>
