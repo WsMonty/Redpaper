@@ -58,8 +58,8 @@ Formerly **Redpaper**, which used Reddit until Reddit closed its public feeds in
 ## Install
 
 ```sh
-git clone https://github.com/WsMonty/Redpaper.git
-cd Redpaper
+git clone https://github.com/WsMonty/easy-backgrounds.git
+cd easy-backgrounds
 ./deploy.sh
 ```
 

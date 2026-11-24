@@ -108,7 +108,7 @@ struct Release: Decodable {
     static let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
 
     static func latest() async throws -> Release {
-        var request = URLRequest(url: URL(string: "https://api.github.com/repos/WsMonty/Redpaper/releases/latest")!)
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/WsMonty/easy-backgrounds/releases/latest")!)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         let (data, _) = try await URLSession.shared.data(for: request)
         return try JSONDecoder().decode(Release.self, from: data)
@@ -189,7 +189,7 @@ final class AppModel: ObservableObject {
     /// Wallpaper ids already shown (or skipped), newest last, so "Next" and scheduled updates never repeat.
     private var seen = UserDefaults.standard.stringArray(forKey: "seen") ?? [] {
         // Never trimmed: "never repeat" has to hold forever.
-        // ponytail: ~10 bytes per id, so even hourly × 5 for a year is ~0.5 MB; move to a file if that ever matters.
+        // ~10 bytes per id: even hourly × 5 for a year is ~0.5 MB.
         didSet { UserDefaults.standard.set(seen, forKey: "seen") }
     }
     /// Index into the selected topics whose turn is next.
@@ -280,7 +280,7 @@ final class AppModel: ObservableObject {
             for group in groups {
                 let sizes = group.map(\.pixelSize)
                 // Only ask Wallhaven for images big enough to reach minFit on the group's smallest screen.
-                // ponytail: drops odd shapes that would just pass (e.g. 4:3 on 16:10); fine for real wallpapers.
+                // This drops odd shapes that would just pass (e.g. 4:3 on 16:10); fine for real wallpapers.
                 let small = sizes.min { $0.width * $0.height < $1.width * $1.height } ?? .zero
                 let atleast = CGSize(width: (small.width * minFit.squareRoot()).rounded(.down),
                                      height: (small.height * minFit.squareRoot()).rounded(.down))
